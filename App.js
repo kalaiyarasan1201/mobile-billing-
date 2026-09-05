@@ -1,4 +1,5 @@
 import React from 'react';
+import { LogBox } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,6 +10,8 @@ import ProductsScreen from './src/screens/ProductsScreen';
 import PrinterSetupScreen from './src/screens/PrinterSetupScreen';
 import HistorySalesScreen from './src/screens/HistorySalesScreen';
 import Colors from './src/constants/Colors';
+
+LogBox.ignoreLogs(['props.pointerEvents is deprecated']);
 
 const Tab = createBottomTabNavigator();
 

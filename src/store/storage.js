@@ -37,6 +37,29 @@ export const getProducts = async () => {
       await AsyncStorage.setItem('@seeded_10_extra', 'true');
     }
 
+    // Auto-seed Pakoda
+    const hasSeededPakoda = await AsyncStorage.getItem('@seeded_pakoda');
+    if (!hasSeededPakoda) {
+      const pakodaItem = [
+         { id: '111', name: 'Onion Pakoda', category: 'Snacks & Breads', price: 20, unit: 'gram', stepQty: 50 }
+      ];
+      products = [...products, ...pakodaItem];
+      await AsyncStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+      await AsyncStorage.setItem('@seeded_pakoda', 'true');
+    }
+
+    // Auto-seed gram products
+    const hasSeededGrams = await AsyncStorage.getItem('@seeded_grams_2');
+    if (!hasSeededGrams) {
+      const gramItems = [
+         { id: '112', name: 'Mixture', category: 'Snacks & Breads', price: 30, unit: 'gram', stepQty: 100 },
+         { id: '113', name: 'Sweet Boondi', category: 'Snacks & Breads', price: 25, unit: 'gram', stepQty: 50 }
+      ];
+      products = [...products, ...gramItems];
+      await AsyncStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+      await AsyncStorage.setItem('@seeded_grams_2', 'true');
+    }
+
     return products;
   } catch (e) {
     return [];

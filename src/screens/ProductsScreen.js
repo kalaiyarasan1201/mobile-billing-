@@ -14,7 +14,7 @@ export default function ProductsScreen() {
   // Modal state
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [formData, setFormData] = useState({ name: '', category: '', price: '', image: null });
+  const [formData, setFormData] = useState({ name: '', category: '', price: '', stepQty: '', unit: 'item', image: null });
   
   const isFocused = useIsFocused();
 
@@ -48,12 +48,14 @@ export default function ProductsScreen() {
       return;
     }
 
+    const stepQty = parseInt(formData.stepQty) || 1;
+
     let updatedProducts;
     if (editingProduct) {
       // Edit existing
       updatedProducts = products.map(p => 
         p.id === editingProduct.id 
-          ? { ...p, name: formData.name, category: formData.category, price: parseFloat(formData.price), image: formData.image }
+          ? { ...p, name: formData.name, category: formData.category, price: parseFloat(formData.price), stepQty, unit: formData.unit, image: formData.image }
           : p
       );
     } else {
@@ -63,6 +65,8 @@ export default function ProductsScreen() {
         name: formData.name,
         category: formData.category,
         price: parseFloat(formData.price),
+        stepQty,
+        unit: formData.unit,
         image: formData.image
       };
       updatedProducts = [...products, newProduct];
@@ -95,20 +99,20 @@ export default function ProductsScreen() {
 
   const openAddModal = () => {
     setEditingProduct(null);
-    setFormData({ name: '', category: '', price: '', image: null });
+    setFormData({ name: '', category: '', price: '', stepQty: '1', unit: 'item', image: null });
     setIsModalVisible(true);
   };
 
   const openEditModal = (product) => {
     setEditingProduct(product);
-    setFormData({ name: product.name, category: product.category, price: product.price.toString(), image: product.image });
+    setFormData({ name: product.name, category: product.category, price: product.price.toString(), stepQty: product.stepQty ? product.stepQty.toString() : '1', unit: product.unit || 'item', image: product.image });
     setIsModalVisible(true);
   };
 
   const closeModal = () => {
     setIsModalVisible(false);
     setEditingProduct(null);
-    setFormData({ name: '', category: '', price: '', image: null });
+    setFormData({ name: '', category: '', price: '', stepQty: '', unit: 'item', image: null });
   };
 
   const filteredProducts = products.filter(p => 
@@ -126,7 +130,7 @@ export default function ProductsScreen() {
       </View>
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{item.name}</Text>
-        <Text style={styles.productCategory}>{item.category} • ₹{item.price}</Text>
+        <Text style={styles.productCategory}>{item.category} • ₹{item.price} {item.unit === 'gram' ? `/ ${item.stepQty || 50}g` : ''}</Text>
       </View>
       <TouchableOpacity style={styles.actionButton} onPress={() => openEditModal(item)}>
         <FontAwesome5 name="pencil-alt" size={16} color={Colors.primary} />
@@ -199,7 +203,38 @@ export default function ProductsScreen() {
 
             <View style={styles.inputGroup}>
               <View style={styles.legendWrapper}>
-                <Text style={styles.legendText}>Price (₹)</Text>
+                <Text style={styles.legendText}>Unit Type</Text>
+              </View>
+              <View style={{flexDirection: 'row', marginTop: 10, borderWidth: 1, borderColor: '#FFDDC2', borderRadius: 8, overflow: 'hidden'}}>
+                <TouchableOpacity 
+                  style={{flex: 1, padding: 12, backgroundColor: formData.unit === 'item' ? Colors.primary : 'transparent', alignItems: 'center'}}
+                  onPress={() => setFormData({...formData, unit: 'item', stepQty: '1'})}>
+                  <Text style={{color: formData.unit === 'item' ? '#fff' : Colors.text, fontWeight: 'bold'}}>Item (Piece)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={{flex: 1, padding: 12, backgroundColor: formData.unit === 'gram' ? Colors.primary : 'transparent', alignItems: 'center'}}
+                  onPress={() => setFormData({...formData, unit: 'gram', stepQty: '50'})}>
+                  <Text style={{color: formData.unit === 'gram' ? '#fff' : Colors.text, fontWeight: 'bold'}}>Weight (Gram)</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <View style={styles.legendWrapper}>
+                <Text style={styles.legendText}>{formData.unit === 'gram' ? 'Quantity Step (in grams, e.g. 50)' : 'Quantity Step (e.g. 1)'}</Text>
+              </View>
+              <TextInput 
+                style={styles.input} 
+                value={formData.stepQty} 
+                onChangeText={t => setFormData({...formData, stepQty: t})} 
+                keyboardType="numeric" 
+                placeholder="Default is 1" 
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <View style={styles.legendWrapper}>
+                <Text style={styles.legendText}>{formData.unit === 'gram' ? `Price for ${formData.stepQty || 50}g (₹)` : 'Price (₹)'}</Text>
               </View>
               <TextInput 
                 style={styles.input} 

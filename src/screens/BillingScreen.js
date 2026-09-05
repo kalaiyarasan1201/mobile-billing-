@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, Modal, Image, Platform } from 'react-native';
 import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import Colors from '../constants/Colors';
 import { getProducts, getSettings, saveBill } from '../store/storage';
@@ -15,6 +15,26 @@ export default function BillingScreen() {
   const [isListening, setIsListening] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const [showCartDetails, setShowCartDetails] = useState(false);
+  const [editingQtyProduct, setEditingQtyProduct] = useState(null);
+  const [tempQty, setTempQty] = useState('');
+
+  const openQtyModal = (productId, currentQty) => {
+    setEditingQtyProduct(productId);
+    setTempQty(String(currentQty));
+  };
+
+  const saveCustomQty = () => {
+    const qty = parseInt(tempQty, 10);
+    if (!isNaN(qty) && qty > 0) {
+      setCart(cart.map(item => item.id === editingQtyProduct ? { ...item, qty: qty } : item));
+    } else if (qty === 0) {
+      setCart(cart.filter(item => item.id !== editingQtyProduct));
+    }
+    setEditingQtyProduct(null);
+    setTempQty('');
+  };
+
   
   const isFocused = useIsFocused();
 
@@ -107,6 +127,9 @@ export default function BillingScreen() {
       const spokenText = event.results[0].transcript.toLowerCase();
       console.log("Mobile Spoken Text:", spokenText);
       
+      // Update search bar with spoken text for immediate feedback
+      setSearchQuery(spokenText);
+      
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ 
           command: 'process_text', 
@@ -137,8 +160,10 @@ export default function BillingScreen() {
         return;
       }
       setIsListening(true);
-      await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      ExpoSpeechRecognitionModule.start({ lang: 'ta-IN' }); // Prioritize Tamil
+      if (Platform.OS !== 'web') {
+        await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      }
+      ExpoSpeechRecognitionModule.start({ lang: 'en-IN' }); // Prioritize Indian English & Tanglish
     } catch (e) {
       console.log('Speech recognition error', e);
       alert('Could not start voice recognition. Check microphone permissions.');
@@ -162,24 +187,29 @@ export default function BillingScreen() {
 
   const addToCart = (product) => {
     const existingItem = cart.find(item => item.id === product.id);
+    const step = product.stepQty || 1;
     if (existingItem) {
-      setCart(cart.map(item => item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
+      setCart(cart.map(item => item.id === product.id ? { ...item, qty: item.qty + step } : item));
     } else {
-      setCart([...cart, { ...product, qty: 1 }]);
+      setCart([...cart, { ...product, qty: step }]);
     }
   };
 
   const removeFromCart = (productId) => {
     const existingItem = cart.find(item => item.id === productId);
-    if (existingItem.qty > 1) {
-      setCart(cart.map(item => item.id === productId ? { ...item, qty: item.qty - 1 } : item));
+    const step = existingItem.stepQty || 1;
+    if (existingItem.qty > step) {
+      setCart(cart.map(item => item.id === productId ? { ...item, qty: item.qty - step } : item));
     } else {
       setCart(cart.filter(item => item.id !== productId));
     }
   };
 
-  const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const totalItems = cart.reduce((sum, item) => sum + (item.unit === 'gram' ? 1 : item.qty), 0);
+  const totalPrice = cart.reduce((sum, item) => {
+    const itemTotal = item.unit === 'gram' ? (item.price / (item.stepQty || 50)) * item.qty : item.price * item.qty;
+    return sum + itemTotal;
+  }, 0);
 
   const getCartQty = (productId) => {
     const item = cart.find(item => item.id === productId);
@@ -217,9 +247,11 @@ export default function BillingScreen() {
     console.log('--------------------------------');
     bill.items.forEach(item => {
       const name = item.name.padEnd(15).substring(0, 15);
-      const qty = String(item.qty).padEnd(5);
+      const qtyStr = item.unit === 'gram' ? `${item.qty}g` : String(item.qty);
+      const qty = qtyStr.padEnd(5);
       const price = String(item.price).padEnd(6);
-      const total = String(item.qty * item.price);
+      const itemTotal = item.unit === 'gram' ? (item.price / (item.stepQty || 50)) * item.qty : item.price * item.qty;
+      const total = String(itemTotal.toFixed(2));
       console.log(`${name} ${qty} ${price} ${total}`);
     });
     console.log('--------------------------------');
@@ -239,7 +271,7 @@ export default function BillingScreen() {
     return (
       <View style={styles.productCard}>
         <View style={styles.priceTag}>
-          <Text style={styles.priceTagText}>₹{item.price}</Text>
+          <Text style={styles.priceTagText}>₹{item.price}{item.unit === 'gram' ? `/${item.stepQty || 50}g` : ''}</Text>
         </View>
         
         {item.image ? (
@@ -258,7 +290,9 @@ export default function BillingScreen() {
         ) : (
           <View style={styles.stepperContainer}>
             <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.stepperBtn}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
-            <Text style={styles.stepperValue}>{qty} in cart</Text>
+            <TouchableOpacity onPress={() => openQtyModal(item.id, qty)}>
+              <Text style={styles.stepperValue}>{qty}{item.unit === 'gram' ? 'g' : ' in cart'}</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => addToCart(item)} style={styles.stepperBtn}><Text style={styles.stepperBtnText}>+</Text></TouchableOpacity>
           </View>
         )}
@@ -321,6 +355,47 @@ export default function BillingScreen() {
 
       {totalItems > 0 && (
         <View style={styles.bottomSheet}>
+          {showCartDetails && (
+            <View style={styles.cartDetailsContainer}>
+              <View style={styles.cartDetailsHeader}>
+                <Text style={styles.cartDetailsTitle}>Current Bill Items ({cart.length})</Text>
+                <TouchableOpacity onPress={() => setCart([])} style={styles.clearAllBtn}>
+                  <FontAwesome5 name="trash" size={12} color={Colors.dangerText} style={{marginRight: 5}}/>
+                  <Text style={styles.clearAllText}>Clear All</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.cartItemsList} showsVerticalScrollIndicator={false}>
+                {cart.map(item => (
+                  <View key={item.id} style={styles.cartItemRow}>
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-start'}}>
+                      <Text style={[styles.cartItemName, {flex: 1}]} numberOfLines={2}>{item.name}</Text>
+                      <TouchableOpacity onPress={() => setCart(cart.filter(i => i.id !== item.id))} style={styles.cartItemDelete}>
+                        <FontAwesome5 name="trash-alt" size={14} color={Colors.dangerText} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <Text style={[styles.cartItemPriceCalc, {flex: 1}]}>₹{item.price}{item.unit === 'gram' ? `/${item.stepQty || 50}g` : ''} x {item.unit === 'gram' ? item.qty / (item.stepQty || 50) : item.qty}</Text>
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
+                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                          <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.cartItemBtn}>
+                            <Text style={styles.cartItemBtnText}>-</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => openQtyModal(item.id, item.qty)}>
+                            <Text style={styles.cartItemQty}>{item.qty}{item.unit === 'gram' ? 'g' : ''}</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => addToCart(item)} style={[styles.cartItemBtn, {backgroundColor: Colors.primary}]}>
+                            <Text style={[styles.cartItemBtnText, {color: '#fff'}]}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={styles.cartItemTotal}>₹{(item.unit === 'gram' ? (item.price/(item.stepQty || 50))*item.qty : item.price*item.qty).toFixed(2)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Payment:</Text>
             <View style={styles.paymentOptions}>
@@ -333,10 +408,12 @@ export default function BillingScreen() {
           </View>
           
           <View style={styles.cartRow}>
-            <View>
-              <Text style={styles.cartItemsText}><FontAwesome5 name="shopping-cart" /> {totalItems} Items</Text>
+            <TouchableOpacity onPress={() => setShowCartDetails(!showCartDetails)} style={{paddingVertical: 5}}>
+              <Text style={styles.cartItemsText}>
+                <FontAwesome5 name="shopping-cart" color={Colors.primary} size={14} /> {totalItems} Items <FontAwesome5 name={showCartDetails ? "caret-up" : "caret-down"} color={Colors.primary} size={14} />
+              </Text>
               <Text style={styles.cartTotal}>₹{totalPrice.toFixed(2)}</Text>
-            </View>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.printBillBtn} onPress={() => setShowReceiptPreview(true)}>
               <FontAwesome5 name="print" size={16} color="#fff" style={{marginRight: 10}} />
               <Text style={styles.printBillText}>PRINT BILL</Text>
@@ -344,6 +421,31 @@ export default function BillingScreen() {
           </View>
         </View>
       )}
+
+      {/* Custom Quantity Modal */}
+      <Modal visible={editingQtyProduct !== null} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { padding: 20, width: '80%', alignItems: 'center' }]}>
+            <Text style={styles.modalTitle}>Enter Quantity</Text>
+            <TextInput
+              style={{ borderWidth: 1, borderColor: Colors.border, width: '100%', padding: 10, borderRadius: 8, marginVertical: 15, fontSize: 18, textAlign: 'center' }}
+              keyboardType="numeric"
+              value={tempQty}
+              onChangeText={setTempQty}
+              autoFocus
+              selectTextOnFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingQtyProduct(null)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmPrintBtn, { flex: 1 }]} onPress={saveCustomQty}>
+                <Text style={styles.confirmPrintText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Thermal Receipt Preview Modal */}
       <Modal visible={showReceiptPreview} transparent animationType="slide">
@@ -395,9 +497,9 @@ export default function BillingScreen() {
               {cart.map(item => (
                 <View key={item.id} style={[styles.receiptRow, {marginBottom: 6}]}>
                   <Text style={[styles.receiptText, {flex: 2}]} numberOfLines={1}>{item.name}</Text>
-                  <Text style={[styles.receiptText, {flex: 1, textAlign: 'center'}]}>{item.qty}</Text>
+                  <Text style={[styles.receiptText, {flex: 1, textAlign: 'center'}]}>{item.unit === 'gram' ? `${item.qty}g` : item.qty}</Text>
                   <Text style={[styles.receiptText, {flex: 1, textAlign: 'right'}]}>{item.price}</Text>
-                  <Text style={[styles.receiptText, {flex: 1, textAlign: 'right'}]}>{item.qty * item.price}</Text>
+                  <Text style={[styles.receiptText, {flex: 1, textAlign: 'right'}]}>{(item.unit === 'gram' ? (item.price/(item.stepQty || 50))*item.qty : item.price * item.qty).toFixed(2)}</Text>
                 </View>
               ))}
               
@@ -471,6 +573,22 @@ const styles = StyleSheet.create({
   paymentBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   paymentBtnText: { fontSize: 14, color: Colors.textLight },
   paymentBtnTextActive: { color: '#fff', fontWeight: 'bold' },
+  cartDetailsContainer: { marginBottom: 15, maxHeight: 400 },
+  cartDetailsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  cartDetailsTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.text },
+  clearAllBtn: { flexDirection: 'row', alignItems: 'center' },
+  clearAllText: { color: Colors.dangerText, fontWeight: 'bold', fontSize: 14 },
+  cartItemsList: { },
+  cartItemRow: { backgroundColor: '#fff', padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: Colors.border },
+  cartItemInfo: { flex: 1, paddingRight: 10 },
+  cartItemName: { fontSize: 14, color: Colors.text, marginBottom: 4 },
+  cartItemPriceCalc: { fontSize: 12, color: Colors.textLight },
+  cartItemActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cartItemBtn: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.primaryLight, justifyContent: 'center', alignItems: 'center' },
+  cartItemBtnText: { color: Colors.primary, fontSize: 14, fontWeight: 'bold' },
+  cartItemQty: { fontSize: 14, fontWeight: 'bold', color: Colors.text, minWidth: 15, textAlign: 'center' },
+  cartItemTotal: { fontSize: 14, fontWeight: 'bold', color: Colors.primary, minWidth: 35, textAlign: 'right' },
+  cartItemDelete: { padding: 4 },
   cartRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cartItemsText: { fontSize: 14, color: Colors.text },
   cartTotal: { fontSize: 28, fontWeight: 'bold', color: Colors.primary },
