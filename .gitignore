@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Python
+venv/
+__pycache__/
+python_voice_server/venv/
